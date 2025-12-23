@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AI Math Solver</string>
+    <string name="title_activity_main">AI Math Solver</string>
+    <string name="package_name">com.umesh.aimathsolver</string>
+    <string name="custom_url_scheme">com.umesh.aimathsolver</string>
+</resources>

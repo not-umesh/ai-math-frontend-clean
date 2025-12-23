@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Math Solver</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- OCR -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+
+  <!-- Markdown -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center">
+
+  <div class="w-full max-w-xl bg-gray-800 p-6 rounded-lg shadow-lg">
+    <h1 class="text-2xl font-bold mb-4 text-center">
+      AI Handwritten Math Solver
+    </h1>
+
+    <video id="video" autoplay playsinline class="w-full rounded mb-3"></video>
+
+    <button
+      onclick="captureAndSolve()"
+      class="w-full bg-emerald-600 hover:bg-emerald-500 p-3 rounded font-semibold mb-4"
+    >
+      Capture & Solve
+    </button>
+
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <div id="result" class="prose prose-invert max-w-none"></div>
+  </div>
+
+  <script>
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const resultDiv = document.getElementById("result");
+
+    // ✅ FORCE REAR CAMERA
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { exact: "environment" } }
+    })
+    .then(stream => video.srcObject = stream)
+    .catch(() => {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => video.srcObject = stream)
+        .catch(() => alert("Camera access denied"));
+    });
+
+    async function captureAndSolve() {
+      resultDiv.innerHTML = "<p>Processing image (OCR)...</p>";
+
+      const ctx = canvas.getContext("2d");
+
+      // ✅ DOWNSCALE IMAGE
+      const scale = 0.5;
+      canvas.width = video.videoWidth * scale;
+      canvas.height = video.videoHeight * scale;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // ✅ BASIC PREPROCESSING (SAFE)
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const avg = (imgData.data[i] + imgData.data[i+1] + imgData.data[i+2]) / 3;
+        const v = avg > 150 ? 255 : 0;
+        imgData.data[i] = v;
+        imgData.data[i+1] = v;
+        imgData.data[i+2] = v;
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      // ✅ OCR
+      const { data: { text } } = await Tesseract.recognize(
+        canvas,
+        "eng",
+        { tessedit_pageseg_mode: 6 }
+      );
+
+      // ✅ SAFE CLEANING (DO NOT OVER-STRIP)
+      const cleanedText = text
+        .replace(/\n+/g, " ")
+        .replace(/[^0-9a-zA-Z+\-*/=().^ ]/g, "")
+        .trim();
+
+      console.log("OCR raw:", text);
+      console.log("OCR cleaned:", cleanedText);
+
+      if (!cleanedText) {
+        resultDiv.innerHTML = "<p>No math detected.</p>";
+        return;
+      }
+
+      resultDiv.innerHTML = "<p>Solving with AI...</p>";
+
+      // ✅ TIMEOUT HANDLING (ACTUALLY WORKS)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+      let data;
+      try {
+        const res = await fetch(
+          "https://ai-math-backend-xscf.onrender.com/solve",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: cleanedText }),
+            signal: controller.signal
+          }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText);
+        }
+
+        data = await res.json();
+
+      } catch (err) {
+        console.error("Backend error:", err.message);
+        resultDiv.innerHTML =
+          "<p class='text-red-400'>Backend error:<br>" +
+          err.message +
+          "</p>";
+        return;
+      }
+
+      // ✅ RENDER RESULT
+      const html = marked.parse(data.solution);
+      resultDiv.innerHTML = html;
+
+      renderMathInElement(resultDiv, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "$", right: "$", display: false }
+        ],
+        throwOnError: false
+      });
+    }
+  </script>
+
+</body>
+</html>

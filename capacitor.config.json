@@ -1,0 +1,6 @@
+{
+  "appId": "com.umesh.aimathsolver",
+  "appName": "AI Math Solver",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}
